@@ -47,6 +47,15 @@ def clean_laps(laps, total_laps):
     remaining = remaining[n_clean >= config.MIN_STINT_LAPS].copy()
     log.append((f"stint under {config.MIN_STINT_LAPS} clean laps", len(short), len(remaining)))
 
+    # a compound with a handful of stints gives no usable slope or interval
+    stints_per_compound = remaining.groupby("Compound")["Stint"].transform(
+        lambda col: remaining.loc[col.index].groupby("Driver")["Stint"].nunique().sum())
+    rare = remaining[stints_per_compound < config.MIN_STINTS_PER_COMPOUND].assign(
+        drop_reason=f"compound with under {config.MIN_STINTS_PER_COMPOUND} clean stints")
+    dropped.append(rare)
+    remaining = remaining[stints_per_compound >= config.MIN_STINTS_PER_COMPOUND].copy()
+    log.append((f"compound with under {config.MIN_STINTS_PER_COMPOUND} clean stints", len(rare), len(remaining)))
+
     remaining["fuel_corrected_laptime"] = fuel_corrected(remaining, total_laps)
     return remaining, pd.concat(dropped), log
 
@@ -62,7 +71,7 @@ def write_data_quality(path, log, dropped):
     lines += ["```", table.to_string(), "```"]
     lines += ["", "## stints excluded for being too short", ""]
     short = dropped[dropped["drop_reason"].str.startswith("stint under")]
-    for (drv, stint), g in short.groupby(["Driver", "Stint"]):
+    for (drv, stint), g in pd.concat([short, dropped[dropped["drop_reason"].str.startswith("compound")]]).groupby(["Driver", "Stint"]):
         lines.append(f"- {drv} stint {int(stint)}: {len(g)} clean laps")
     with open(path, "w") as f:
         f.write("\n".join(lines) + "\n")
