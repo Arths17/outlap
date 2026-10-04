@@ -15,3 +15,10 @@ def load_race():
     if missing:
         raise ValueError(f"laps table is missing {missing}")
     return session, laps
+
+
+def load_quali():
+    fastf1.Cache.enable_cache(config.CACHE_DIR)
+    session = fastf1.get_session(config.YEAR, config.GRAND_PRIX, config.QUALI_SESSION)
+    session.load(laps=True, telemetry=True, weather=False, messages=False)
+    return session

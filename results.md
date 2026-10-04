@@ -14,12 +14,12 @@ baseline slope per compound (s per lap, bootstrap over stints)
 HARD      21.000       0.061   0.036    0.091
 MEDIUM    24.000       0.040   0.024    0.056
 
-held-out stint error (s per lap)
+held-out stint error (s per lap), 610 laps scored
           base_err  mixed_err
 Compound                     
-HARD         0.602      0.634
-MEDIUM       0.411      0.415
-all          0.493      0.509
+HARD         0.530      0.543
+MEDIUM       0.353      0.361
+all          0.435      0.445
 
 fuel sensitivity
  fuel_effect Compound  mean_slope  ci_low  ci_high

@@ -14,7 +14,8 @@ def main():
 
     slopes = model.stint_slopes(green_laps)
     slope_ci = model.bootstrap_mean_slope(slopes)
-    errors = model.summarise_errors(model.heldout_errors(green_laps))
+    heldout = model.heldout_errors(green_laps, {"mixed_err": []})
+    errors = model.summarise_errors(heldout)
     sensitivity = model.fuel_sensitivity(green_laps, total_laps)
 
     plots.degradation_scatter(green_laps, model.pooled_lowess(green_laps), "figures/degradation_scatter.png")
@@ -25,7 +26,7 @@ def main():
     with open("results.md", "w") as f:
         f.write("laps per step\n" + "\n".join(f"{s}: dropped {d}, remaining {r}" for s, d, r in log))
         f.write("\n\nbaseline slope per compound (s per lap, bootstrap over stints)\n" + slope_ci.to_string())
-        f.write("\n\nheld-out stint error (s per lap)\n" + errors.to_string())
+        f.write(f"\n\nheld-out stint error (s per lap), {len(heldout)} laps scored\n" + errors.to_string())
         f.write("\n\nfuel sensitivity\n" + sensitivity.to_string(index=False) + "\n")
     print(open("results.md").read())
 

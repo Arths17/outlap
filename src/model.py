@@ -44,13 +44,16 @@ def _stint_id(laps):
 
 
 def _recentre(pred, held, calibration_laps=CALIBRATION_LAPS):
-    # shift predictions so they match the stint's first laps, the level differs per stint
-    early = held["stint_age"] <= calibration_laps
+    # shift predictions so they match the stint's first clean laps, the level differs per stint
+    # (counted over clean laps: a stint can lose its first laps to the pit lane or a safety car)
+    order = held.sort_values("LapNumber").groupby("stint").cumcount().reindex(held.index)
+    early = order < calibration_laps
     offset = (held.loc[early, "fuel_corrected_laptime"] - pred[early]).groupby(held.loc[early, "stint"]).mean()
     return pred + held["stint"].map(offset).to_numpy(), ~early
 
 
-def heldout_errors(green_laps, n_splits=5):
+def heldout_errors(green_laps, feature_sets, n_splits=5):
+    """baseline plus one mixed model per entry of feature_sets, all on the same stint folds"""
     laps = green_laps.assign(stint=_stint_id(green_laps)).reset_index(drop=True)
     rows = []
     for train_idx, test_idx in GroupKFold(n_splits=n_splits).split(laps, groups=laps["stint"]):
@@ -62,23 +65,32 @@ def heldout_errors(green_laps, n_splits=5):
         base_pred = test["Compound"].map(mean_slope).to_numpy() * test["stint_age"].to_numpy()
         base_pred, later = _recentre(pd.Series(base_pred, index=test.index), test)
 
-        # improved: mixed model, random intercept per stint
-        fit = smf.mixedlm("fuel_corrected_laptime ~ C(Compound) + stint_age:C(Compound) + TrackTemp",
-                          train, groups=train["stint"]).fit(reml=False)
-        mixed_pred = pd.Series(fit.predict(test).to_numpy(), index=test.index)
-        mixed_pred, _ = _recentre(mixed_pred, test)
-
-        test = test[later]
-        rows.append(pd.DataFrame(dict(
+        out = pd.DataFrame(dict(
             stint=test["stint"], Compound=test["Compound"],
-            base_err=(base_pred[later] - test["fuel_corrected_laptime"]).abs(),
-            mixed_err=(mixed_pred[later] - test["fuel_corrected_laptime"]).abs())))
+            base_err=(base_pred - test["fuel_corrected_laptime"]).abs()))
+        for name, extra in feature_sets.items():
+            terms = "".join(f" + standardize({c})" for c in extra)
+            fit = smf.mixedlm(f"fuel_corrected_laptime ~ C(Compound) + stint_age:C(Compound) + TrackTemp{terms}",
+                              train, groups=train["stint"]).fit(reml=False)
+            pred = pd.Series(fit.predict(test).to_numpy(), index=test.index)
+            pred, _ = _recentre(pred, test)
+            out[name] = (pred - test["fuel_corrected_laptime"]).abs()
+        rows.append(out[later])
     return pd.concat(rows)
 
 
+def paired_difference_ci(errors, column, reference="mixed_err", n_boot=5000, seed=0):
+    """mean error change versus the reference model, bootstrapped over stints"""
+    per_stint = (errors[column] - errors[reference]).groupby(errors["stint"]).mean().to_numpy()
+    rng = np.random.default_rng(seed)
+    boots = rng.choice(per_stint, size=(n_boot, len(per_stint))).mean(axis=1)
+    return per_stint.mean(), np.percentile(boots, 2.5), np.percentile(boots, 97.5)
+
+
 def summarise_errors(errors):
-    by_compound = errors.groupby("Compound")[["base_err", "mixed_err"]].mean()
-    by_compound.loc["all"] = errors[["base_err", "mixed_err"]].mean()
+    cols = [c for c in errors.columns if c.endswith("_err")]
+    by_compound = errors.groupby("Compound")[cols].mean()
+    by_compound.loc["all"] = errors[cols].mean()
     return by_compound
 
 
