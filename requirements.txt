@@ -1,0 +1,9 @@
+fastf1
+pandas
+numpy
+matplotlib
+scipy
+statsmodels
+scikit-learn
+pytest
+nbformat
